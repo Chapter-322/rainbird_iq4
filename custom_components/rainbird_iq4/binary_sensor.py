@@ -186,7 +186,9 @@ class RainBirdForecastBinarySensor(CoordinatorEntity, BinarySensorEntity):
         satellite = coordinator.data.get("satellite", {}) if coordinator.data else {}
         self._satellite_name = satellite.get("name", "Rain Bird IQ4")
         self._attr_unique_id = f"{self._satellite_id}_forecast_enabled"
-        self._attr_device_class = BinarySensorDeviceClass.RUNNING
+        # No device class: this reports whether the feature is enabled, and
+        # the RUNNING class displayed that as "Running". The translation file
+        # gives the on/off states as Enabled/Disabled instead.
         self._attr_icon = "mdi:weather-lightning-rainy"
 
     @property

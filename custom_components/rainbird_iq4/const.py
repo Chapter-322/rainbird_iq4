@@ -11,12 +11,14 @@ CONF_SCAN_INTERVAL = "scan_interval"
 CONF_SCAN_INTERVAL_CONFIG = "scan_interval_config"
 CONF_SCAN_INTERVAL_PROGRAM = "scan_interval_program"
 CONF_ENABLE_REALTIME = "enable_realtime"
+CONF_DEFAULT_DURATION = "default_duration"
 
 # Defaults
 DEFAULT_SCAN_INTERVAL = 30          # seconds — real-time data
 DEFAULT_SCAN_INTERVAL_CONFIG = 300  # seconds — satellite config (5 min)
 DEFAULT_SCAN_INTERVAL_PROGRAM = 3600  # seconds — programs (1 hour)
 DEFAULT_ENABLE_REALTIME = True      # live zone state over the AppSync socket
+DEFAULT_DURATION = 10               # minutes — run time of the zone switches
 DEFAULT_NAME = "Rain Bird IQ4"
 
 # Rain Bird API
@@ -75,6 +77,8 @@ STATUS_PAUSED = "P"
 CONTROLLER_MODELS: dict[int, str] = {
     57: "ESP-ME3",
     69: "ESP-TM2",
+    # Reported by alsmaison (ESP-TM2 with a LNK2 module).
+    70: "ESP-TM2",
     # Reported by KRH1009; the IQ4 portal shows it as "ESP-TM2 8 Stations".
     71: "ESP-TM2",
     # Reported by jflachaine-ops. The ARC family is ARC4/ARC6/ARC8 by station

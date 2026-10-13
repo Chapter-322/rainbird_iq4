@@ -28,6 +28,8 @@ A Home Assistant custom integration for **Rain Bird IQ4** cloud-connected irriga
 - **Multi-controller support** — accounts with multiple controllers can add each one as a separate integration entry
 - **7 actions** to control irrigation, rain delay, and seasonal adjust settings
 - **Calendar** — upcoming irrigation events per program (all schedule types supported)
+- **One device per zone** — each zone has its own device, linked to the controller, with an on/off switch, so zones can be placed in different areas
+- **Controls on the device page** — rain delay slider and a Run button per program
 - **Configurable polling intervals** — separate intervals for real-time, config, and program data
 - **Manual refresh button** — force immediate update of all data, rate-limited to avoid excessive cloud requests
 - **Optional Lovelace card** — compact zone controls with per-zone durations and optimistic feedback
@@ -97,10 +99,18 @@ After setup, click **Configure** on the integration to adjust the authentication
 | Real-time interval | 30s | 10–300s | Station status, alarms |
 | Config interval | 5 min | 60–3600s | Rain delay, forecast, controller mode |
 | Program interval | 1 hour | 5 min–24h | Programs, schedules, seasonal adjust |
+| Zone switch run time | 10 min | 1–30 min | How long a zone runs when its switch is turned on |
 
 ---
 
 ## Entities
+
+### Devices
+
+Since v1.8.0 the controller and each of its zones are separate devices. A zone
+device (named after the zone, e.g. `Station 001 - Allee`) is linked to the
+controller and holds the zone's status sensor and its switch, so each zone can
+be assigned to its own area. Everything else stays on the controller device.
 
 ### Sensors
 | Entity | Description |
@@ -111,6 +121,8 @@ After setup, click **Configure** on the integration to adjust the authentication
 | Controller Mode | `auto` / `off` |
 | Alarms | Unacknowledged alarm count |
 | Warnings | Unacknowledged warning count |
+
+**Controller Mode attributes:** raw_mode — the mode exactly as Rain Bird reports it. Only *auto* and *off* are mapped so far; if Controller Mode shows *Unknown*, please report this value in an issue.
 
 **Station attributes:** terminal, last_run, last_run_completed, remaining time, run_ends_at, is_active
 
@@ -129,18 +141,32 @@ attribute is absent it keeps estimating from the requested duration instead.
 
 **Program attributes (Cyclic):** start_time, schedule_type, skip_days, excluded_days, steps, weather_adjust, seasonal_adjust, next_run
 
+All programs also carry raw_program_type and raw_et_adjust_type, the values as
+Rain Bird reports them; schedule_type and weather_adjust read *weekly* and
+*none* for anything not yet mapped.
+
 ### Binary Sensors
 | Entity | Description |
 |---|---|
 | Connected | Controller connected to IQ4 cloud |
-| Forecast Rain Delay | Forecast-based rain delay enabled |
+| Forecast Rain Delay | Forecast-based rain delay enabled (*Enabled* / *Disabled*) |
 
 **Forecast attributes (when enabled):** percent threshold, rainfall threshold (inches), delay_days
 
 ### Calendar
 One calendar entity per scheduled program showing upcoming irrigation events. Supports Weekly, Odd, Even and Cyclic schedule types.
 
-### Button
+### Switches
+One per zone, on the zone's device. Turning it on runs the zone for the
+**Zone switch run time** set in the integration options (10 minutes by
+default); turning it off stops it. Use the `start_zone` action to pick a
+different duration for a single run. A paused zone reads as off.
+
+### Number
+- **Rain Delay** — days of rain delay, 0–14 (0 clears it). Same as the `set_rain_delay` action; the Rain Delay sensor is still there.
+
+### Buttons
+- **Run Program A–N** — runs the program now with its own run times, same as the `start_program` action
 - **Refresh** — triggers immediate update of all three coordinators
 
 Refresh requests are rate-limited to one successful refresh every 30 seconds. This prevents repeated button presses or stale browser tabs from generating a burst of cloud API calls.
@@ -283,6 +309,7 @@ This integration does the same: once a `start_zone` call is accepted by the back
 | Model | Firmware | Status |
 |---|---|---|
 | Rain Bird ESP-TM2 | 2.29.0 | ✅ Full support |
+| Rain Bird ESP-TM2 with LNK2 (type 70) | — | ✅ Reported working |
 | Rain Bird ESP-ME3 | 3.11.0 | ✅ Full support (requires complete IQ4 web setup) |
 
 Please open an issue if you have a different model and want to help test.

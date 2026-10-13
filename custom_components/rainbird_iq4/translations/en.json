@@ -42,11 +42,13 @@
           "scan_interval": "Real-time data poll interval (seconds)",
           "scan_interval_config": "Controller config poll interval (seconds)",
           "scan_interval_program": "Program poll interval (seconds)",
-          "enable_realtime": "Live updates over Rain Bird's real-time channel"
+          "enable_realtime": "Live updates over Rain Bird's real-time channel",
+          "default_duration": "Zone switch run time (minutes)"
         },
         "data_description": {
           "auth_channel": "How the integration logs in. Leave on \"Web portal\" for most accounts. Choose \"Mobile app\" only if zone control fails with a 403 error (e.g. US free-tier accounts). Changing this reloads the integration.",
-          "enable_realtime": "Applies state changes as the controller reports them, in about a second, instead of waiting for the next poll. Only MQTT-based controllers report this way; polling continues either way. Turn this off if a firewall blocks the connection."
+          "enable_realtime": "Applies state changes as the controller reports them, in about a second, instead of waiting for the next poll. Only MQTT-based controllers report this way; polling continues either way. Turn this off if a firewall blocks the connection.",
+          "default_duration": "How long a zone runs when its switch is turned on. To choose a different duration for a single run, use the Start Zone action."
         }
       }
     }
@@ -101,7 +103,11 @@
         "name": "Any Zone Running"
       },
       "forecast_rain_delay": {
-        "name": "Forecast Rain Delay"
+        "name": "Forecast Rain Delay",
+        "state": {
+          "on": "Enabled",
+          "off": "Disabled"
+        }
       },
       "local_sensor": {
         "name": "Local Sensor"
@@ -113,11 +119,19 @@
     "button": {
       "refresh": {
         "name": "Refresh"
+      },
+      "run_program": {
+        "name": "Run Program {program}"
       }
     },
     "calendar": {
       "program_schedule": {
         "name": "Program {program} Schedule"
+      }
+    },
+    "number": {
+      "rain_delay": {
+        "name": "Rain Delay"
       }
     }
   }

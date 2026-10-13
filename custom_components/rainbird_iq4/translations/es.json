@@ -42,11 +42,13 @@
           "scan_interval": "Intervalo de consulta de datos en tiempo real (segundos)",
           "scan_interval_config": "Intervalo de consulta de la configuración del programador (segundos)",
           "scan_interval_program": "Intervalo de consulta de los programas (segundos)",
-          "enable_realtime": "Actualizaciones en vivo por el canal en tiempo real de Rain Bird"
+          "enable_realtime": "Actualizaciones en vivo por el canal en tiempo real de Rain Bird",
+          "default_duration": "Duración del riego desde el interruptor de zona (minutos)"
         },
         "data_description": {
           "auth_channel": "Cómo inicia sesión la integración. Deja «Portal web» para la mayoría de las cuentas. Elige «Aplicación móvil» solo si el control de zonas falla con un error 403 (por ejemplo, cuentas gratuitas de EE. UU.). Cambiarlo recarga la integración.",
-          "enable_realtime": "Aplica los cambios de estado según los informa el controlador, en aproximadamente un segundo, en vez de esperar a la siguiente consulta. Solo los controladores MQTT informan así, y la consulta periódica se mantiene en cualquier caso. Desactívalo si un cortafuegos bloquea la conexión."
+          "enable_realtime": "Aplica los cambios de estado según los informa el controlador, en aproximadamente un segundo, en vez de esperar a la siguiente consulta. Solo los controladores MQTT informan así, y la consulta periódica se mantiene en cualquier caso. Desactívalo si un cortafuegos bloquea la conexión.",
+          "default_duration": "Tiempo que riega una zona al encender su interruptor. Para elegir otra duración en un riego concreto, usa la acción «Start Zone»."
         }
       }
     }
@@ -101,7 +103,11 @@
         "name": "Alguna zona regando"
       },
       "forecast_rain_delay": {
-        "name": "Pausa por previsión de lluvia"
+        "name": "Pausa por previsión de lluvia",
+        "state": {
+          "on": "Activado",
+          "off": "Desactivado"
+        }
       },
       "local_sensor": {
         "name": "Sensor local"
@@ -113,11 +119,19 @@
     "button": {
       "refresh": {
         "name": "Actualizar"
+      },
+      "run_program": {
+        "name": "Ejecutar programa {program}"
       }
     },
     "calendar": {
       "program_schedule": {
         "name": "Calendario del programa {program}"
+      }
+    },
+    "number": {
+      "rain_delay": {
+        "name": "Retraso por lluvia"
       }
     }
   }

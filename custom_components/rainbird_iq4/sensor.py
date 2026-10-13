@@ -11,8 +11,10 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util import slugify
 
 from .const import DOMAIN
+from .device import zone_device_info, zone_name
 from .coordinator import RainBirdCoordinator, RainBirdConfigCoordinator, RainBirdProgramCoordinator, PROGRAM_TYPE_WEEKLY, PROGRAM_TYPE_ODD, PROGRAM_TYPE_EVEN, PROGRAM_TYPE_CYCLIC
 
 _LOGGER = logging.getLogger(__name__)
@@ -39,7 +41,10 @@ async def async_setup_entry(
 
     # Real-time sensors (30s polling)
     for station in coordinator.data.get("stations", []):
-        entities.append(RainBirdStationSensor(coordinator, config_coordinator, program_coordinator, station))
+        entities.append(RainBirdStationSensor(
+            coordinator, config_coordinator, program_coordinator, station,
+            coordinators["controller_device_id"],
+        ))
 
     # Program sensors (1h polling)
     for program in program_coordinator.data.get("programs", []):
@@ -157,6 +162,9 @@ class RainBirdStationSensor(SensorEntity):
     # translated; translation_key is what points at them.
     _attr_has_entity_name = True
     _attr_translation_key = "station"
+    # Since v1.8.0 each zone is a device of its own, named after the zone, so
+    # the entity takes the device name instead of repeating it.
+    _attr_name = None
 
     def __init__(
         self,
@@ -164,6 +172,7 @@ class RainBirdStationSensor(SensorEntity):
         config_coordinator: RainBirdConfigCoordinator,
         program_coordinator: RainBirdProgramCoordinator,
         station: dict,
+        controller_device_id: str,
     ) -> None:
         self._coordinator = coordinator
         self._config_coordinator = config_coordinator
@@ -173,19 +182,15 @@ class RainBirdStationSensor(SensorEntity):
         self._satellite_id = coordinator.satellite_id
         self._satellite_name = satellite.get("name", "Rain Bird IQ4")
         self._attr_unique_id = f"{self._satellite_id}_station_{self._station_id}"
-        self._attr_name = station.get("name") or f"Station {station.get('terminal', self._station_id)}"
         self._attr_icon = "mdi:sprinkler"
-
-    @property
-    def device_info(self) -> DeviceInfo:
-        satellite = self._config_coordinator.data.get("satellite", {}) if self._config_coordinator.data else {}
-        return DeviceInfo(
-            identifiers={(DOMAIN, str(self._satellite_id))},
-            name=self._satellite_name,
-            manufacturer="Rain Bird",
-            model=satellite.get("model", "Rain Bird IQ4"),
-            sw_version=satellite.get("version"),
+        self._attr_device_info = zone_device_info(
+            self._satellite_id, station, controller_device_id
         )
+        # Keep the entity_id a new install gets on <controller>_<zone>, as it
+        # was while the zone lived on the controller device. The card finds a
+        # zone's controller from that prefix. Entities already registered
+        # keep their entity_id regardless; the registry wins over this.
+        self.entity_id = f"sensor.{slugify(f'{self._satellite_name} {zone_name(station)}')}"
 
     def _get_station(self) -> dict:
         if not self._coordinator.data:
@@ -338,6 +343,11 @@ class RainBirdProgramSensor(SensorEntity):
             "steps":           program.get("steps"),
             "weather_adjust":  "automatic" if et_type == 7 else "none",
             "seasonal_adjust": program.get("adjustedValue"),
+            # Values as Rain Bird reports them. schedule_type and
+            # weather_adjust fall back to "weekly" and "none" for anything
+            # unrecognised, so these are what tells an unmapped value apart.
+            "raw_program_type":   program.get("programType"),
+            "raw_et_adjust_type": program.get("etAdjustType"),
         }
 
         # next_run is calculated for all program types in the coordinator
@@ -412,3 +422,14 @@ class RainBirdControllerModeSensor(CoordinatorEntity, SensorEntity):
         """
         mode = self.coordinator.data.get("satellite", {}).get("systemMode") if self.coordinator.data else None
         return self.MODES.get(mode)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """The mode exactly as Rain Bird reports it.
+
+        Only "off" and "auto" are mapped so far; a controller in any other
+        mode reads as unknown. The raw value is what a user can report so the
+        missing mode can be mapped.
+        """
+        satellite = self.coordinator.data.get("satellite", {}) if self.coordinator.data else {}
+        return {"raw_mode": satellite.get("systemMode")}

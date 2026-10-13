@@ -42,11 +42,13 @@
           "scan_interval": "Intervalle d'actualisation des données en temps réel (secondes)",
           "scan_interval_config": "Intervalle d'actualisation de la configuration du programmateur (secondes)",
           "scan_interval_program": "Intervalle d'actualisation des programmes (secondes)",
-          "enable_realtime": "Mises à jour en direct via le canal temps réel de Rain Bird"
+          "enable_realtime": "Mises à jour en direct via le canal temps réel de Rain Bird",
+          "default_duration": "Durée d'arrosage de l'interrupteur de zone (minutes)"
         },
         "data_description": {
           "auth_channel": "Méthode utilisée par l'intégration pour se connecter. Conservez « Portail web » pour la plupart des comptes. Choisissez « Application mobile » uniquement si la commande des zones échoue avec une erreur 403 (par exemple avec les comptes gratuits aux États-Unis). La modification de cette option recharge l'intégration.",
-          "enable_realtime": "Applique les changements d'état dès que le programmateur les signale, en une seconde environ, au lieu d'attendre la prochaine interrogation. Seuls les programmateurs MQTT fonctionnent ainsi, et l'interrogation périodique est maintenue dans tous les cas. Désactivez cette option si un pare-feu bloque la connexion."
+          "enable_realtime": "Applique les changements d'état dès que le programmateur les signale, en une seconde environ, au lieu d'attendre la prochaine interrogation. Seuls les programmateurs MQTT fonctionnent ainsi, et l'interrogation périodique est maintenue dans tous les cas. Désactivez cette option si un pare-feu bloque la connexion.",
+          "default_duration": "Durée pendant laquelle une zone arrose lorsque son interrupteur est activé. Pour choisir une autre durée pour un arrosage ponctuel, utilisez l'action « Start Zone »."
         }
       }
     }
@@ -101,7 +103,11 @@
         "name": "Arrosage en cours"
       },
       "forecast_rain_delay": {
-        "name": "Report d'arrosage selon les prévisions de pluie"
+        "name": "Report d'arrosage selon les prévisions de pluie",
+        "state": {
+          "on": "Activé",
+          "off": "Désactivé"
+        }
       },
       "local_sensor": {
         "name": "Capteur local"
@@ -113,11 +119,19 @@
     "button": {
       "refresh": {
         "name": "Actualiser"
+      },
+      "run_program": {
+        "name": "Lancer le programme {program}"
       }
     },
     "calendar": {
       "program_schedule": {
         "name": "Calendrier du programme {program}"
+      }
+    },
+    "number": {
+      "rain_delay": {
+        "name": "Report d'arrosage"
       }
     }
   }

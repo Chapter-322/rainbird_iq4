@@ -137,7 +137,8 @@ import ast, json, pathlib
 base = pathlib.Path("custom_components/rainbird_iq4")
 strings = json.loads((base / "strings.json").read_text()).get("entity", {})
 platforms = {"sensor.py": "sensor", "binary_sensor.py": "binary_sensor",
-             "button.py": "button", "calendar.py": "calendar"}
+             "button.py": "button", "calendar.py": "calendar",
+             "number.py": "number", "switch.py": "switch"}
 problems, used = [], set()
 for filename, domain in platforms.items():
     for node in ast.walk(ast.parse((base / filename).read_text())):

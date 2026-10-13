@@ -11,6 +11,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import ConfigEntryNotReady, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.start import async_at_started
 from homeassistant.loader import async_get_integration
@@ -36,10 +37,11 @@ from .const import (
     DOMAIN,
 )
 from .coordinator import RainBirdCoordinator, RainBirdConfigCoordinator, RainBirdProgramCoordinator
+from .device import controller_device_info
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = ["sensor", "binary_sensor", "calendar", "button"]
+PLATFORMS = ["sensor", "binary_sensor", "calendar", "button", "switch", "number"]
 FRONTEND_URL = f"/{DOMAIN}/rainbird_iq4_card.js"
 FRONTEND_PATH = Path(__file__).parent / "frontend" / "rainbird_iq4_card.js"
 _FRONTEND_REGISTERED = False
@@ -404,6 +406,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "api":      api,
         "subscription": subscription,
     }
+
+    # The controller device is registered before any platform loads: the zone
+    # devices name it as their via_device, and the platforms are set up
+    # concurrently, so nothing else guarantees it exists by the time the
+    # first zone entity registers.
+    satellite = (config_coordinator.data or {}).get("satellite", {})
+    controller_device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=entry.entry_id,
+        **controller_device_info(satellite_id, satellite),
+    )
+    hass.data[DOMAIN][entry.entry_id]["controller_device_id"] = controller_device.id
 
     await _async_register_frontend(hass)
     _async_schedule_card_resource_version(hass)
