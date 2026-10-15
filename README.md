@@ -99,7 +99,7 @@ After setup, click **Configure** on the integration to adjust the authentication
 | Real-time interval | 30s | 10–300s | Station status, alarms |
 | Config interval | 5 min | 60–3600s | Rain delay, forecast, controller mode |
 | Program interval | 1 hour | 5 min–24h | Programs, schedules, seasonal adjust |
-| Zone switch run time | 10 min | 1–30 min | How long a zone runs when its switch is turned on |
+| Zone switch run time | 10 min | 1–100 min | How long a zone runs when its switch is turned on |
 
 ---
 
@@ -252,7 +252,7 @@ connection; everything then works as it did before v1.7.0.
 
 | Action | Description |
 |---|---|
-| `rainbird_iq4.start_zone` | Start a zone manually (1–30 min) |
+| `rainbird_iq4.start_zone` | Start a zone manually (1–100 min) |
 | `rainbird_iq4.start_program` | Run a saved program manually (uses the program's own per-station run times) |
 | `rainbird_iq4.stop_zone` | Stop a running zone |
 | `rainbird_iq4.set_rain_delay` | Set rain delay in days (0 = clear) |
