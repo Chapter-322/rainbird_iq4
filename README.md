@@ -44,7 +44,7 @@ A Home Assistant custom integration for **Rain Bird IQ4** cloud-connected irriga
 
 1. Open HACS in Home Assistant
 2. Go to **Integrations** → click the three dots menu → **Custom repositories**
-3. Add `https://github.com/jsbowling42/rainbird_iq4` as an **Integration**
+3. Add `https://github.com/davidsuarez82/rainbird_iq4` as an **Integration**
 4. Search for **Rain Bird IQ4** and install
 5. Restart Home Assistant
 
