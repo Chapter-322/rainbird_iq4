@@ -23,7 +23,7 @@
       }
     },
     "error": {
-      "invalid_auth": "Anmeldung abgelehnt. Überprüfen Sie Ihren Benutzernamen und Ihr Passwort und versuchen Sie, sich unter https://iq4.rainbird.com anzumelden – möglicherweise muss das Passwort geändert oder neue Nutzungsbedingungen akzeptiert werden.",
+      "invalid_auth": "Anmeldung abgelehnt. Überprüfen Sie Ihren Benutzernamen und Ihr Passwort und versuchen Sie, sich auf der Rain Bird IQ4-Website anzumelden – möglicherweise muss das Passwort geändert oder neue Nutzungsbedingungen akzeptiert werden.",
       "waf_challenge": "Der Bot-Schutz von Rain Bird hat die Anmeldung blockiert, bevor sie das Anmeldeformular erreicht hat. Dies ist kein Problem mit den Anmeldedaten und in der Regel nur vorübergehend – warten Sie bitte einige Minuten und versuchen Sie es dann erneut.",
       "cannot_connect": "Die Verbindung konnte nicht hergestellt werden. Überprüfen Sie Ihre Anmeldedaten und Ihre Internetverbindung und versuchen Sie es dann erneut.",
       "no_controllers": "Für dieses Konto wurden keine Controller gefunden.",

@@ -44,7 +44,7 @@ A Home Assistant custom integration for **Rain Bird IQ4** cloud-connected irriga
 
 1. Open HACS in Home Assistant
 2. Go to **Integrations** → click the three dots menu → **Custom repositories**
-3. Add `https://github.com/davidsuarez82/rainbird_iq4` as an **Integration**
+3. Add `https://github.com/Chapter-322/rainbird_iq4` as an **Integration**
 4. Search for **Rain Bird IQ4** and install
 5. Restart Home Assistant
 
@@ -323,7 +323,7 @@ Please open an issue if you have a different model and want to help test.
 If the integration fails to load or entities are missing, you can run the diagnostic script to check which API endpoints are available for your controller:
 
 ```bash
-curl -O https://raw.githubusercontent.com/davidsuarez82/rainbird_iq4/main/tools/diagnose.sh
+curl -O https://raw.githubusercontent.com/Chapter-322/rainbird_iq4/main/tools/diagnose.sh
 chmod +x diagnose.sh
 ./diagnose.sh your@email.com yourpassword
 ```
