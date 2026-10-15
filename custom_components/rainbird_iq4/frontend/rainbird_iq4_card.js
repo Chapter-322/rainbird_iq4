@@ -1515,7 +1515,7 @@ class RainBirdIQ4Card extends HTMLElement {
   }
 
   _maxDurationForStation(station) {
-    return station?.mode === "sensor" ? 30 : 720;
+    return station?.mode === "sensor" ? 100 : 720;
   }
 
   _stationAction(station) {
