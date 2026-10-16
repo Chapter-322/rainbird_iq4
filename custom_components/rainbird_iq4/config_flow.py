@@ -224,9 +224,9 @@ class RainBirdOptionsFlow(config_entries.OptionsFlow):
                     CONF_AUTH_CHANNEL, default=current_channel
                 ): _channel_selector(),
                 vol.Optional(CONF_ENABLE_REALTIME, default=current_push): bool,
-                # Same 1-30 minute range as the start_zone action.
+                # Same 1-100 minute range as the start_zone action.
                 vol.Optional(CONF_DEFAULT_DURATION, default=current_duration): vol.All(
-                    int, vol.Range(min=1, max=30)
+                    int, vol.Range(min=1, max=100)
                 ),
                 vol.Optional(CONF_SCAN_INTERVAL, default=current_realtime): vol.All(
                     int, vol.Range(min=10, max=300)
