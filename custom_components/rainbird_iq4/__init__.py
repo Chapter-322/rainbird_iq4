@@ -35,6 +35,7 @@ from .const import (
     DEFAULT_SCAN_INTERVAL_CONFIG,
     DEFAULT_SCAN_INTERVAL_PROGRAM,
     DOMAIN,
+    MAX_MANUAL_DURATION,
 )
 from .coordinator import RainBirdCoordinator, RainBirdConfigCoordinator, RainBirdProgramCoordinator
 from .device import controller_device_info
@@ -345,12 +346,26 @@ _SERVICE_HANDLERS = {
     "set_weather_adjust_manual": _handle_weather_adjust_manual,
 }
 
+# Validated here, not only by the services.yaml selector: the selector only
+# bounds the UI slider, so scripts and automations could otherwise send any
+# duration straight to the API.
+_SERVICE_SCHEMAS = {
+    "start_zone": vol.Schema({
+        vol.Required("station_entity"): cv.entity_id,
+        vol.Required("duration"): vol.All(
+            vol.Coerce(int), vol.Range(min=1, max=MAX_MANUAL_DURATION)
+        ),
+    }),
+}
+
 
 def _async_register_services(hass: HomeAssistant) -> None:
     """Register domain services once, regardless of how many entries exist."""
     for service, handler in _SERVICE_HANDLERS.items():
         if not hass.services.has_service(DOMAIN, service):
-            hass.services.async_register(DOMAIN, service, handler)
+            hass.services.async_register(
+                DOMAIN, service, handler, schema=_SERVICE_SCHEMAS.get(service)
+            )
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

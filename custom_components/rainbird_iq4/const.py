@@ -19,6 +19,7 @@ DEFAULT_SCAN_INTERVAL_CONFIG = 300  # seconds — satellite config (5 min)
 DEFAULT_SCAN_INTERVAL_PROGRAM = 3600  # seconds — programs (1 hour)
 DEFAULT_ENABLE_REALTIME = True      # live zone state over the AppSync socket
 DEFAULT_DURATION = 10               # minutes — run time of the zone switches
+MAX_MANUAL_DURATION = 100          # minutes — Rain Bird app maximum (1h 40m)
 DEFAULT_NAME = "Rain Bird IQ4"
 
 # Rain Bird API

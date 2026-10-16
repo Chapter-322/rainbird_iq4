@@ -1515,6 +1515,7 @@ class RainBirdIQ4Card extends HTMLElement {
   }
 
   _maxDurationForStation(station) {
+    // 100 = MAX_MANUAL_DURATION in const.py (Rain Bird app maximum).
     return station?.mode === "sensor" ? 100 : 720;
   }
 
