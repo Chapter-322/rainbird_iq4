@@ -46,7 +46,11 @@ class RainBirdIQ4Card extends HTMLElement {
     return Math.max(4, Math.min(10, stations.length + 4));
   }
 
-  _render(force = false) {
+  // force skips the "nothing changed" shortcut. background marks a render
+  // the user did not ask for (the 1 s ticker, a service call finishing):
+  // those must not rebuild the card while a control is being used, or an
+  // open dropdown such as the controller picker is torn down mid-choice.
+  _render(force = false, background = false) {
     if (!this.shadowRoot || !this._hass) return;
 
     const stations = this._getStations();
@@ -75,7 +79,7 @@ class RainBirdIQ4Card extends HTMLElement {
       return;
     }
 
-    if (!force && this._isEditingControl()) {
+    if ((!force || background) && this._isEditingControl()) {
       this._scheduleDeferredRender();
       return;
     }
@@ -943,6 +947,9 @@ class RainBirdIQ4Card extends HTMLElement {
   _bindEvents() {
     this.shadowRoot.querySelector("[data-controller]")?.addEventListener("change", (event) => {
       this._selectedControllerId = event.target.value;
+      // Release focus so background renders (countdowns) resume at once
+      // instead of waiting for the user to tap elsewhere.
+      event.target.blur();
       this._render(true);
     });
 
@@ -1135,7 +1142,7 @@ class RainBirdIQ4Card extends HTMLElement {
         .catch((error) => {
           callbacks.error?.(error);
           this._actionError = error?.message || String(error || "Service call failed");
-          this._render(true);
+          this._render(true, true);
         });
     } catch (error) {
       callbacks.error?.(error);
@@ -1184,13 +1191,13 @@ class RainBirdIQ4Card extends HTMLElement {
     this._callService("button", "press", { entity_id: controller.refreshEntity }, {
       success: () => {
         this._refreshingUntil = Date.now() + 5000;
-        this._render(true);
+        this._render(true, true);
       },
       error: (error) => {
         this._actionError = error?.message || String(error || "Service call failed");
         this._lastRefreshAt[controller.id] = 0;
         this._refreshingUntil = 0;
-        this._render(true);
+        this._render(true, true);
       },
     });
   }
@@ -1541,7 +1548,7 @@ class RainBirdIQ4Card extends HTMLElement {
       message: error?.message || String(error || "Command failed"),
       expiresAt: Date.now() + 12000,
     });
-    this._render(true);
+    this._render(true, true);
   }
 
   _reconcileStationActions() {
@@ -1684,7 +1691,7 @@ class RainBirdIQ4Card extends HTMLElement {
         if (!this._hasTemporaryState()) {
           this._syncTicker();
         }
-        this._render(true);
+        this._render(true, true);
       }, 1000);
       return;
     }

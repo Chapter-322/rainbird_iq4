@@ -100,24 +100,32 @@ def _get_next_occurrences(
             events.append(_make_event(check_date, h, m, duration, tz, summary))
 
     elif program_type == PROGRAM_TYPE_CYCLIC:
-        skip_days = max(1, program.get("skipDays", 1))
-        # Use nextCyclicalStartDate as anchor if available
-        next_start_str = program.get("nextCyclicalStartDate")
-        if next_start_str:
+        skip_days = max(1, program.get("skipDays") or 1)
+        # Any known run date fixes the phase of the cycle. The controller's
+        # nextCyclicalStartDate is preferred; nextRun is derived from it.
+        anchor = None
+        for key in ("nextCyclicalStartDate", "nextRun"):
+            value = program.get(key)
+            if not value:
+                continue
             try:
-                anchor = datetime.fromisoformat(next_start_str.split("T")[0]).date()
-            except Exception:
-                anchor = from_date
-        else:
+                anchor = date.fromisoformat(str(value).split("T")[0])
+                break
+            except ValueError:
+                continue
+        if anchor is None:
+            _LOGGER.debug(
+                "Program %s has no cycle anchor; its calendar dates may be off",
+                program.get("shortName"),
+            )
             anchor = from_date
 
-        # Find first occurrence >= from_date
-        if anchor < from_date:
-            delta = (from_date - anchor).days
-            steps = (delta + skip_days - 1) // skip_days
-            anchor = anchor + timedelta(days=steps * skip_days)
-
-        check_date = anchor
+        # First occurrence on or after from_date, whether the anchor lies
+        # before or after it. The phase must not depend on from_date: Home
+        # Assistant asks for ranges starting wherever the view starts.
+        check_date = from_date + timedelta(
+            days=(anchor - from_date).days % skip_days
+        )
         while (check_date - from_date).days < days_ahead:
             events.append(_make_event(check_date, h, m, duration, tz, summary))
             check_date += timedelta(days=skip_days)
@@ -211,18 +219,22 @@ class RainBirdCalendar(CalendarEntity):
 
     @property
     def event(self) -> CalendarEvent | None:
-        """Return the next upcoming irrigation event."""
+        """Return the irrigation event in progress, or else the next one."""
         program = self._get_program()
         if not program.get("startTime"):
             return None
+        now = dt_util.now(self._tz)
+        # Long enough to reach the next run of any cyclic program.
+        days_ahead = max(8, (program.get("skipDays") or 1) + 2)
         events = _get_next_occurrences(
             program,
             self._total_minutes(program),
-            date.today(),
+            now.date(),
             self._tz,
-            days_ahead=7,
+            days_ahead=days_ahead,
         )
-        return events[0] if events else None
+        # An event that already ended today is history, not the next run.
+        return next((e for e in events if e.end > now), None)
 
     async def async_get_events(
         self,

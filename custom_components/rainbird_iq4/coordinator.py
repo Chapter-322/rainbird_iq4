@@ -912,6 +912,9 @@ class RainBirdProgramCoordinator(DataUpdateCoordinator):
                 "weekDays":         week_days,
                 "excludedWeekDays": excluded_days,
                 "skipDays":         skip_days,
+                # The calendar anchors "every N days" programs on this date;
+                # without it every cyclic program fell on the same days.
+                "nextCyclicalStartDate": p.get("nextCyclicalStartDate"),
                 "nextRun":          next_run,
                 "adjust":           p.get("programAdjust"),
                 "adjustedValue":    p.get("tempProgramAdjust") if et_type == 7 else p.get("programAdjust"),
