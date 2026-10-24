@@ -796,7 +796,7 @@ class RainBirdIQ4Card extends HTMLElement {
     const remaining = this._stationRemaining(station, action);
     const last = this._formatLastRun(station.attributes.last_run_completed || station.attributes.last_run);
     const statusMeta = [
-      station.terminal ? `Terminal ${station.terminal}` : null,
+      station.terminal ? `Terminal ${this._escape(station.terminal)}` : null,
       starting ? `<span class="pending">Starting...</span>` : null,
       stopping ? `<span class="pending">Stopping...</span>` : null,
       actionError ? `<span class="error-text">${this._escape(action.message || "Command failed")}</span>` : null,
@@ -804,7 +804,7 @@ class RainBirdIQ4Card extends HTMLElement {
       running && !remaining ? `<span class="running">Running</span>` : null,
       paused ? `<span class="paused">Paused</span>` : null,
       !running && !paused && !disabled && !stopping && !starting ? "Idle" : null,
-      disabled ? this._humanState(station.state) : null,
+      disabled ? this._escape(this._humanState(station.state)) : null,
     ]
       .filter(Boolean)
       .join("<span>•</span>");
@@ -816,7 +816,7 @@ class RainBirdIQ4Card extends HTMLElement {
             ? ""
             : `
               <label class="duration" title="Run duration in minutes">
-                <input data-station-duration="${this._escape(station.key)}" type="number" min="1" max="${maxDuration}" inputmode="numeric" value="${this._escape(duration)}" ${disabled || actionError ? "disabled" : ""}>
+                <input data-station-duration="${this._escape(station.key)}" type="number" min="1" max="${this._escape(maxDuration)}" inputmode="numeric" value="${this._escape(duration)}" ${disabled || actionError ? "disabled" : ""}>
                 <span>min</span>
               </label>
             `
@@ -921,6 +921,10 @@ class RainBirdIQ4Card extends HTMLElement {
       attrs.seasonal_adjust !== undefined ? `${attrs.seasonal_adjust}%` : null,
     ]
       .filter(Boolean)
+      // Every part is plain text built from entity attributes, which come
+      // from the Rain Bird cloud (or from any entity the discovery matched),
+      // so each is escaped before the HTML separators are added.
+      .map((part) => this._escape(part))
       .join("<span>•</span>");
 
     return `
@@ -1837,7 +1841,8 @@ class RainBirdIQ4Card extends HTMLElement {
       .replaceAll("&", "&amp;")
       .replaceAll("<", "&lt;")
       .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;");
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
   }
 }
 
@@ -1986,7 +1991,8 @@ class RainBirdIQ4CardEditor extends HTMLElement {
       .replaceAll("&", "&amp;")
       .replaceAll("<", "&lt;")
       .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;");
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
   }
 }
 

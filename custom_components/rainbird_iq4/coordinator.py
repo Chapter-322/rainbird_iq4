@@ -7,10 +7,12 @@ from datetime import date, datetime, timedelta
 from typing import Any
 
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import RainBirdAPI
+from .auth import RainBirdAuthRejected
 from .const import DOMAIN, WEEKDAY_NAMES, get_controller_model
 
 _LOGGER = logging.getLogger(__name__)
@@ -551,6 +553,10 @@ class RainBirdCoordinator(DataUpdateCoordinator):
             self._consecutive_errors = 0
             self._async_schedule_followup(data)
             return data
+        except RainBirdAuthRejected as err:
+            # Not transient: retrying would only resend refused credentials.
+            # Home Assistant stops polling and asks the user to reauthenticate.
+            raise ConfigEntryAuthFailed(str(err)) from err
         except Exception as err:
             self._consecutive_errors += 1
             # Never mask a failure of the very first refresh: with no previous
@@ -734,6 +740,10 @@ class RainBirdConfigCoordinator(DataUpdateCoordinator):
             data = await self.hass.async_add_executor_job(self._fetch_data)
             self._consecutive_errors = 0
             return data
+        except RainBirdAuthRejected as err:
+            # Not transient: retrying would only resend refused credentials.
+            # Home Assistant stops polling and asks the user to reauthenticate.
+            raise ConfigEntryAuthFailed(str(err)) from err
         except Exception as err:
             self._consecutive_errors += 1
             # Never mask a failure of the very first refresh (see realtime note).
@@ -842,6 +852,10 @@ class RainBirdProgramCoordinator(DataUpdateCoordinator):
             data = await self.hass.async_add_executor_job(self._fetch_data)
             self._consecutive_errors = 0
             return data
+        except RainBirdAuthRejected as err:
+            # Not transient: retrying would only resend refused credentials.
+            # Home Assistant stops polling and asks the user to reauthenticate.
+            raise ConfigEntryAuthFailed(str(err)) from err
         except Exception as err:
             self._consecutive_errors += 1
             # Never mask a failure of the very first refresh (see realtime note).

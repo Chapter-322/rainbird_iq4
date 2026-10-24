@@ -9,7 +9,11 @@ import voluptuous as vol
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall, callback
-from homeassistant.exceptions import ConfigEntryNotReady, ServiceValidationError
+from homeassistant.exceptions import (
+    ConfigEntryAuthFailed,
+    ConfigEntryNotReady,
+    ServiceValidationError,
+)
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -398,6 +402,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await coordinator.async_config_entry_first_refresh()
         await config_coordinator.async_config_entry_first_refresh()
         await program_coordinator.async_config_entry_first_refresh()
+    except ConfigEntryAuthFailed:
+        # Must reach Home Assistant as is: wrapped in ConfigEntryNotReady it
+        # would retry the refused login forever instead of asking for reauth.
+        await hass.async_add_executor_job(api.close)
+        raise
     except Exception as err:
         raise ConfigEntryNotReady(f"Unable to connect to Rain Bird: {err}") from err
 

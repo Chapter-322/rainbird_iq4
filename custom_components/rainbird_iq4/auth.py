@@ -64,6 +64,21 @@ class RainBirdAuthRejected(RuntimeError):
     """
 
 
+class RainBirdLoginBackoff(RuntimeError):
+    """A login is not attempted because a recent one failed.
+
+    Raised without touching the network while the backoff after a failed
+    login (WAF challenge, network error) is running.
+    """
+
+
+# Seconds to wait before the next login attempt after the 1st, 2nd and
+# 3rd-or-later consecutive failure. Applies only to logins, never to regular
+# API calls, and resets on the first successful login. Repeated logins from
+# one IP are what escalates the AWS WAF to its JavaScript challenge.
+LOGIN_BACKOFF = (60, 300, 900)
+
+
 def _looks_like_waf(resp) -> bool:
     """Return True if the response is an AWS WAF challenge rather than content."""
     if resp.status_code in _WAF_STATUS:
@@ -325,6 +340,14 @@ class RainBirdAuth:
         # poll from different executor threads. Without this, an expired
         # token can trigger up to three simultaneous logins.
         self._refresh_lock = threading.Lock()
+        # Set once Rain Bird refuses the stored credentials. From then on no
+        # login is attempted at all: retrying a rejected password every poll
+        # is what gets an account locked or the IP challenged by the WAF. The
+        # reauth flow reloads the entry, which builds a fresh instance.
+        self._rejected: RainBirdAuthRejected | None = None
+        # Backoff after a login that failed for any other reason.
+        self._login_failures = 0
+        self._next_login_at = 0.0
         # Per-account, per-channel cache file in the HA config dir (survives
         # HACS updates, never mixes tokens between different Rain Bird
         # accounts, and keeps web/app tokens separate so switching channels
@@ -380,17 +403,48 @@ class RainBirdAuth:
             # the token it fetched.
             with self._refresh_lock:
                 if not self._is_token_valid():
-                    _LOGGER.debug(
-                        "Fetching new Rain Bird token (channel=%s)", self._channel
-                    )
-                    if self._channel == AUTH_CHANNEL_APP:
-                        self._token = fetch_token_isapp(self._username, self._password)
-                    else:
-                        self._token = fetch_token(self._username, self._password)
-                    self._token_exp = _decode_jwt_exp(self._token)
-                    self._save_token_cache()
+                    self._login()
 
         return self._token
+
+    def _login(self) -> None:
+        """Log in once, unless the credentials were refused or a backoff runs.
+
+        Caller holds _refresh_lock.
+        """
+        if self._rejected is not None:
+            raise self._rejected
+        wait = self._next_login_at - time.monotonic()
+        if wait > 0:
+            raise RainBirdLoginBackoff(
+                f"Login paused for {int(wait)}s after a failed attempt"
+            )
+
+        _LOGGER.debug("Fetching new Rain Bird token (channel=%s)", self._channel)
+        try:
+            if self._channel == AUTH_CHANNEL_APP:
+                token = fetch_token_isapp(self._username, self._password)
+            else:
+                token = fetch_token(self._username, self._password)
+        except RainBirdAuthRejected as err:
+            self._rejected = err
+            _LOGGER.warning(
+                "Rain Bird rejected the stored credentials; no further logins "
+                "will be attempted until they are updated"
+            )
+            raise
+        except Exception:
+            delay = LOGIN_BACKOFF[min(self._login_failures, len(LOGIN_BACKOFF) - 1)]
+            self._login_failures += 1
+            self._next_login_at = time.monotonic() + delay
+            _LOGGER.debug("Login failed; next attempt in %ss", delay)
+            raise
+
+        self._login_failures = 0
+        self._next_login_at = 0.0
+        self._token = token
+        self._token_exp = _decode_jwt_exp(token)
+        self._save_token_cache()
 
     def invalidate(self) -> None:
         """Force token refresh on next call."""

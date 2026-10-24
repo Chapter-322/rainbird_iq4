@@ -44,6 +44,7 @@ import aiohttp
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
+from .auth import RainBirdAuthRejected
 from .const import APPSYNC_URL
 
 _LOGGER = logging.getLogger(__name__)
@@ -73,6 +74,21 @@ STATE_TABLE_SUBSCRIPTION = (
     "  }\n"
     "}\n"
 )
+
+
+def describe_error(err: BaseException | None) -> str:
+    """Describe a connection error without its message.
+
+    The connection URL carries the access token in its query string, and
+    aiohttp puts the request URL in the text of handshake errors, so the text
+    of a connection error must never reach the log. The exception type and,
+    when there is one, the HTTP status are enough to tell failures apart.
+    """
+    if err is None:
+        return "unknown error"
+    status = getattr(err, "status", None)
+    name = type(err).__name__
+    return f"{name} (HTTP {status})" if isinstance(status, int) else name
 
 
 def realtime_url(appsync_url: str, token: str) -> tuple[str, str]:
@@ -199,8 +215,16 @@ class RainBirdSubscription:
                 attempt = 0
             except asyncio.CancelledError:
                 raise
+            except RainBirdAuthRejected:
+                # Reconnecting would mean logging in again with refused
+                # credentials. The coordinators hit the same remembered
+                # rejection on their next poll and ask for reauthentication,
+                # which reloads the entry and starts a new subscription.
+                _LOGGER.debug("Live connection stopped: credentials rejected")
+                self._async_set_healthy(False)
+                return
             except Exception as err:  # noqa: BLE001 - never let the task die
-                _LOGGER.debug("Live connection failed: %s", err)
+                _LOGGER.debug("Live connection failed: %s", describe_error(err))
             self._async_set_healthy(False)
             delay = RECONNECT_BACKOFF[min(attempt, len(RECONNECT_BACKOFF) - 1)]
             attempt += 1
@@ -262,7 +286,7 @@ class RainBirdSubscription:
                     _LOGGER.debug("AppSync closed the connection (%s)", ws.close_code)
                     return
                 if msg.type == aiohttp.WSMsgType.ERROR:
-                    _LOGGER.debug("WebSocket error: %s", ws.exception())
+                    _LOGGER.debug("WebSocket error: %s", describe_error(ws.exception()))
                     return
                 if msg.type != aiohttp.WSMsgType.TEXT:
                     continue

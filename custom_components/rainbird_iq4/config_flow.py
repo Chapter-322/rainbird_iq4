@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from typing import Any
 
 import voluptuous as vol
@@ -77,6 +78,24 @@ async def _get_satellites(
     return satellites
 
 
+def _login_error(err: Exception) -> str:
+    """Map a login or discovery failure to the config flow error key."""
+    if isinstance(err, ValueError):
+        _LOGGER.error("No controllers found: %s", err)
+        return "no_controllers"
+    if isinstance(err, RainBirdWafChallenge):
+        _LOGGER.error("AWS WAF challenge during login: %s", err)
+        return "waf_challenge"
+    if isinstance(err, RainBirdAuthRejected):
+        _LOGGER.error("Login rejected: %s", err)
+        return "invalid_auth"
+    if isinstance(err, RuntimeError):
+        _LOGGER.error("Connection error: %s", err)
+        return "cannot_connect"
+    _LOGGER.exception("Unexpected error: %s", err)
+    return "unknown"
+
+
 class RainBirdConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle the Rain Bird IQ4 config flow."""
 
@@ -103,21 +122,8 @@ class RainBirdConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 self._satellites = await _get_satellites(
                     self.hass, self._username, self._password, self._channel
                 )
-            except ValueError as err:
-                errors["base"] = "no_controllers"
-                _LOGGER.error("No controllers found: %s", err)
-            except RainBirdWafChallenge as err:
-                errors["base"] = "waf_challenge"
-                _LOGGER.error("AWS WAF challenge during login: %s", err)
-            except RainBirdAuthRejected as err:
-                errors["base"] = "invalid_auth"
-                _LOGGER.error("Login rejected: %s", err)
-            except RuntimeError as err:
-                errors["base"] = "cannot_connect"
-                _LOGGER.error("Connection error: %s", err)
-            except Exception as err:
-                errors["base"] = "unknown"
-                _LOGGER.exception("Unexpected error: %s", err)
+            except Exception as err:  # noqa: BLE001 - mapped to a form error
+                errors["base"] = _login_error(err)
             else:
                 if len(self._satellites) == 1:
                     # Single controller — skip selector
@@ -134,6 +140,53 @@ class RainBirdConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_AUTH_CHANNEL, default=DEFAULT_AUTH_CHANNEL
                 ): _channel_selector(),
             }),
+            errors=errors,
+        )
+
+    async def async_step_reauth(
+        self, entry_data: Mapping[str, Any]
+    ) -> FlowResult:
+        """Start reauthentication after Rain Bird refused the stored password."""
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Ask for the new password and check it before saving it.
+
+        The username and channel stay as configured: a different account
+        would be a different controller, which belongs in a new entry.
+        """
+        entry = self._get_reauth_entry()
+        username = entry.data[CONF_USERNAME]
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            password = user_input[CONF_PASSWORD]
+            channel = entry.options.get(
+                CONF_AUTH_CHANNEL,
+                entry.data.get(CONF_AUTH_CHANNEL, DEFAULT_AUTH_CHANNEL),
+            )
+            try:
+                satellites = await _get_satellites(
+                    self.hass, username, password, channel
+                )
+            except Exception as err:  # noqa: BLE001 - mapped to a form error
+                errors["base"] = _login_error(err)
+            else:
+                if not any(
+                    s.get("id") == entry.data[CONF_SATELLITE_ID] for s in satellites
+                ):
+                    errors["base"] = "wrong_account"
+                else:
+                    return self.async_update_reload_and_abort(
+                        entry, data_updates={CONF_PASSWORD: password}
+                    )
+
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=vol.Schema({vol.Required(CONF_PASSWORD): str}),
+            description_placeholders={"username": username},
             errors=errors,
         )
 

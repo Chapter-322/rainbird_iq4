@@ -20,6 +20,13 @@
         "data": {
           "satellite_id": "Programador"
         }
+      },
+      "reauth_confirm": {
+        "title": "Volver a autenticar Rain Bird IQ4",
+        "description": "Rain Bird ha rechazado la contraseña guardada de {username}. Introduce la contraseña actual para reanudar. Si se sigue rechazando, entra en la web de Rain Bird IQ4: puede que la cuenta necesite un cambio de contraseña o aceptar nuevas condiciones.",
+        "data": {
+          "password": "Contraseña"
+        }
       }
     },
     "error": {
@@ -27,10 +34,12 @@
       "waf_challenge": "La protección antibots de Rain Bird bloqueó el inicio de sesión antes de llegar al formulario. No es un problema de credenciales y suele ser temporal: espera unos minutos y vuelve a intentarlo.",
       "cannot_connect": "No se pudo conectar. Revisa tus credenciales y tu conexión a internet, y vuelve a intentarlo.",
       "no_controllers": "No se ha encontrado ningún programador en esta cuenta.",
-      "unknown": "Se ha producido un error inesperado. Consulta los registros para más detalles."
+      "unknown": "Se ha producido un error inesperado. Consulta los registros para más detalles.",
+      "wrong_account": "Esta cuenta ya no tiene acceso a este controlador. Para usar otra cuenta, añádela como una nueva entrada de la integración."
     },
     "abort": {
-      "already_configured": "Este programador ya está configurado."
+      "already_configured": "Este programador ya está configurado.",
+      "reauth_successful": "Autenticación completada. La integración se ha recargado."
     }
   },
   "options": {

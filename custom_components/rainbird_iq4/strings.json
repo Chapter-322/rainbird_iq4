@@ -20,6 +20,13 @@
         "data": {
           "satellite_id": "Controller"
         }
+      },
+      "reauth_confirm": {
+        "title": "Reauthenticate Rain Bird IQ4",
+        "description": "Rain Bird refused the stored password for {username}. Enter the current password to resume. If it keeps being refused, sign in on the Rain Bird IQ4 website: the account may need a password change or new terms accepted.",
+        "data": {
+          "password": "Password"
+        }
       }
     },
     "error": {
@@ -27,10 +34,12 @@
       "waf_challenge": "Rain Bird's bot protection blocked the login before it reached the sign-in form. This is not a credentials problem and is usually temporary — wait a few minutes and try again.",
       "cannot_connect": "Failed to connect. Check your credentials and internet connection, then try again.",
       "no_controllers": "No controllers were found on this account.",
-      "unknown": "An unexpected error occurred. See the logs for details."
+      "unknown": "An unexpected error occurred. See the logs for details.",
+      "wrong_account": "This account no longer has access to this controller. To use a different account, add it as a new integration entry."
     },
     "abort": {
-      "already_configured": "This controller is already configured."
+      "already_configured": "This controller is already configured.",
+      "reauth_successful": "Reauthentication successful. The integration has been reloaded."
     }
   },
   "options": {

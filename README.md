@@ -43,10 +43,13 @@ A Home Assistant custom integration for **Rain Bird IQ4** cloud-connected irriga
 ### Via HACS (recommended)
 
 1. Open HACS in Home Assistant
-2. Go to **Integrations** → click the three dots menu → **Custom repositories**
-3. Add `https://github.com/Chapter-322/rainbird_iq4` as an **Integration**
-4. Search for **Rain Bird IQ4** and install
-5. Restart Home Assistant
+2. Search for **Rain Bird IQ4** and install it
+3. Restart Home Assistant
+
+If the search finds nothing, your HACS does not list it yet: add it as a
+custom repository first. In HACS, open the three dots menu → **Custom
+repositories**, add `https://github.com/Chapter-322/rainbird_iq4` with type
+**Integration**, then search again.
 
 To use the bundled Lovelace card, add this dashboard resource after restarting:
 
@@ -317,6 +320,8 @@ Please open an issue if you have a different model and want to help test.
 ---
 
 ## Troubleshooting
+
+**"Reauthentication required" / entities unavailable after a password change:** when Rain Bird refuses the stored password, the integration stops logging in altogether (repeated refused logins can get the account locked or the IP blocked by Rain Bird's bot protection) and Home Assistant shows a reauthentication prompt under Settings → Devices & Services. Enter the current password there and the integration resumes. If the password is right but still refused, sign in on the IQ4 website: the account may need a password change or new terms accepted. Other login failures, such as network errors or a WAF challenge, are retried after a pause of 1, 5 and then 15 minutes instead of on every poll.
 
 **Controller shows as "Demo" or entities show weird data:** make sure the controller is fully set up on the IQ4 **website** (not just the mobile app). Remove any leftover Demo controller from your IQ4 account, verify your real controller appears at https://iq4.rainbird.com, and go through its configuration pages once, saving the settings. Then reload the integration.
 
