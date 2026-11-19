@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import base64
+from dataclasses import dataclass, field
 import hashlib
+import html
 import json
 import logging
 import os
@@ -15,6 +17,7 @@ from urllib.parse import parse_qs, quote, urljoin, urlparse
 from curl_cffi import requests as cf
 
 from homeassistant.core import HomeAssistant
+from homeassistant.util.hass_dict import HassKey
 
 from .const import (
     APP_CLIENT_ID,
@@ -25,7 +28,11 @@ from .const import (
     AUTH_CHANNEL_APP,
     AUTH_CHANNEL_WEB,
     CLIENT_ID,
+    CONF_AUTH_CHANNEL,
+    CONF_PASSWORD,
+    CONF_USERNAME,
     DEFAULT_AUTH_CHANNEL,
+    DOMAIN,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -58,9 +65,42 @@ class RainBirdWafChallenge(RuntimeError):
 class RainBirdAuthRejected(RuntimeError):
     """The identity server returned the login page instead of a token.
 
-    Means the credentials were refused, or the account is in a state that
+    Can mean the credentials were refused, or the account is in a state that
     needs attention in the web portal (forced password change, accepting
-    new terms, temporary lockout).
+    new terms, temporary lockout). It is NOT proof of a wrong password: the
+    login page also comes back for reasons that pass on their own, which is
+    why RainBirdAuth only lets this reach callers after
+    REJECTIONS_TO_REAUTH consecutive ones. Callers treat it as final and ask
+    the user to reauthenticate.
+
+    status, path and error_text describe the response for the log. path has
+    no query string and error_text has the username masked, so both are
+    safe to log.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        status: int | None = None,
+        path: str | None = None,
+        error_text: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.status = status
+        self.path = path
+        self.error_text = error_text
+
+
+class RainBirdAuthSuspect(RuntimeError):
+    """The login page came back, but not often enough yet to ask for reauth.
+
+    Deliberately not a RainBirdAuthRejected subclass: the coordinators turn
+    that one into ConfigEntryAuthFailed, and one observation is not enough
+    to bother the user. This one is an ordinary failure: the coordinators
+    count it as transient and the subscription reconnects with its backoff.
+    The config flow still maps it to invalid_auth, since there the user has
+    just typed the password.
     """
 
 
@@ -68,7 +108,7 @@ class RainBirdLoginBackoff(RuntimeError):
     """A login is not attempted because a recent one failed.
 
     Raised without touching the network while the backoff after a failed
-    login (WAF challenge, network error) is running.
+    login (WAF challenge, network error, login page returned) is running.
     """
 
 
@@ -77,6 +117,65 @@ class RainBirdLoginBackoff(RuntimeError):
 # API calls, and resets on the first successful login. Repeated logins from
 # one IP are what escalates the AWS WAF to its JavaScript challenge.
 LOGIN_BACKOFF = (60, 300, 900)
+
+# Consecutive login-page responses before the credentials count as refused.
+# Must stay above 1: a single one has turned out to be wrong in practice, and
+# every reauth it triggers makes the user re-enter a correct password.
+REJECTIONS_TO_REAUTH = 2
+# Minimum wait after a login-page response before trying again. Long enough
+# for a passing problem on Rain Bird's side to clear, short enough that a
+# truly changed password is reported within minutes.
+REJECTION_RETRY_DELAY = 300
+
+# Longest page error text kept for the log.
+_ERROR_TEXT_MAX = 200
+# Where ASP.NET / IdentityServer login pages put their error messages.
+_ERROR_BLOCK = re.compile(
+    r'<(div|span|ul|p)\b[^>]*class="[^"]*\b'
+    r'(?:validation-summary-errors|alert-danger|field-validation-error|text-danger)'
+    r'\b[^"]*"[^>]*>(.*?)</\1>',
+    re.IGNORECASE | re.DOTALL,
+)
+_TAG = re.compile(r"<[^>]+>")
+
+
+def _login_page_error(page: str, username: str, password: str) -> str | None:
+    """Return the error text a login page shows, safe to log, or None.
+
+    Only the error blocks are read, never the form (it echoes the username).
+    The password and the username are masked anyway, case-insensitively for
+    the username, before the text is cut, so a cut can never leave a
+    readable piece of either.
+    """
+    parts = []
+    for match in _ERROR_BLOCK.finditer(page or ""):
+        text = " ".join(html.unescape(_TAG.sub(" ", match.group(2))).split())
+        if text:
+            parts.append(text)
+    if not parts:
+        return None
+    text = " | ".join(parts)
+    if password:
+        text = text.replace(password, "<password>")
+    user = username.strip()
+    if user:
+        text = re.sub(re.escape(user), "<user>", text, flags=re.IGNORECASE)
+    return text[:_ERROR_TEXT_MAX]
+
+
+def _login_page_rejection(message: str, resp, username: str, password: str) -> RainBirdAuthRejected:
+    """Build the rejection for a login-page response, with what to log."""
+    try:
+        page = resp.text or ""
+    except Exception:
+        page = ""
+    return RainBirdAuthRejected(
+        message,
+        status=resp.status_code,
+        # Path only: the query carries ReturnUrl with state and nonce.
+        path=urlparse(str(resp.url or "")).path,
+        error_text=_login_page_error(page, username, password),
+    )
 
 
 def _looks_like_waf(resp) -> bool:
@@ -174,11 +273,12 @@ def fetch_token(username: str, password: str) -> str:
             raise RainBirdWafChallenge(_WAF_MESSAGE.format(status=r2.status_code))
 
         if "/Account/Login" in url:
-            raise RainBirdAuthRejected(
+            raise _login_page_rejection(
                 "Login rejected (the server returned the login page instead of "
                 "redirecting with a token). Check the username and password, and "
                 "try logging in at https://iq4.rainbird.com — the account may need "
-                "a password change or new terms accepted."
+                "a password change or new terms accepted.",
+                r2, username, password,
             )
 
         raise RuntimeError(
@@ -249,11 +349,12 @@ def fetch_token_isapp(username: str, password: str) -> str:
                     _WAF_MESSAGE.format(status=resp.status_code)
                 )
             if resp.status_code == 200:
-                raise RainBirdAuthRejected(
+                raise _login_page_rejection(
                     "Login rejected (the server returned the login page instead "
                     "of redirecting). Check the username and password, and try "
                     "logging in at https://iq4.rainbird.com — the account may "
-                    "need a password change or new terms accepted."
+                    "need a password change or new terms accepted.",
+                    resp, username, password,
                 )
 
         # Step 3: walk the redirect chain until the authorization code appears
@@ -313,6 +414,98 @@ def fetch_token_isapp(username: str, password: str) -> str:
         return token
 
 
+@dataclass
+class LoginState:
+    """Login bookkeeping that must outlive a RainBirdAuth instance.
+
+    A failure in the first refresh ends in ConfigEntryNotReady, and Home
+    Assistant retries the setup with a brand-new RainBirdAuth. Bookkeeping
+    kept on the instance would restart at zero on every retry: the backoff
+    would never hold and a refused password would be resent forever. So
+    async_setup_entry takes this from hass.data (see login_state_for) and
+    every instance for the same account, channel and password shares it.
+    """
+
+    # Serializes logins: the three coordinators poll from different executor
+    # threads, and without it an expired token can trigger simultaneous
+    # logins. Shared, so entries with the same credentials serialize too.
+    refresh_lock: threading.Lock = field(default_factory=threading.Lock)
+    # Consecutive login-page responses since the last successful login.
+    rejections: int = 0
+    # Set once rejections reaches REJECTIONS_TO_REAUTH. From then on no login
+    # is attempted at all: retrying a refused password every poll is what
+    # gets an account locked or the IP challenged by the WAF.
+    rejected: RainBirdAuthRejected | None = None
+    # Backoff after any failed login.
+    login_failures: int = 0
+    next_login_at: float = 0.0
+
+    def reset(self) -> None:
+        """Forget every failure, as after a successful login.
+
+        Called from the event loop, so it must not take refresh_lock (it is
+        held across a network login). Plain attribute writes: at worst a
+        login already in flight overwrites them with its own outcome, which
+        is just as current.
+        """
+        self.rejections = 0
+        self.rejected = None
+        self.login_failures = 0
+        self.next_login_at = 0.0
+
+
+# hass.data key of the shared LoginState objects. Kept out of
+# hass.data[DOMAIN], which holds only one dict per loaded entry: the service
+# helpers iterate it and the unload path checks it is empty.
+LOGIN_STATE: HassKey[dict[str, LoginState]] = HassKey(f"{DOMAIN}_login")
+
+
+def _login_state_key(username: str, channel: str, password: str) -> str:
+    """Key of the LoginState for one set of credentials.
+
+    The password is part of it: two entries for the same account where only
+    one got the new password after a change must not share a latch, or the
+    one still refused would keep sending the other back to reauth. The key
+    lives in memory only and must never be logged.
+    """
+    raw = f"{username.strip().lower()}|{channel}|{password}"
+    return hashlib.sha256(raw.encode()).hexdigest()
+
+
+def entry_credentials(entry) -> tuple[str, str, str]:
+    """(username, channel, password) a config entry logs in with.
+
+    The channel chosen at install (entry.data) can be overridden later in
+    the options flow (entry.options takes precedence).
+    """
+    channel = entry.options.get(
+        CONF_AUTH_CHANNEL,
+        entry.data.get(CONF_AUTH_CHANNEL, DEFAULT_AUTH_CHANNEL),
+    )
+    return entry.data[CONF_USERNAME], channel, entry.data[CONF_PASSWORD]
+
+
+def login_state_for(
+    hass: HomeAssistant, username: str, channel: str, password: str
+) -> LoginState:
+    """Return the shared LoginState for these credentials, creating it."""
+    states = hass.data.setdefault(LOGIN_STATE, {})
+    return states.setdefault(
+        _login_state_key(username, channel, password), LoginState()
+    )
+
+
+def reset_login_state(
+    hass: HomeAssistant, username: str, channel: str, password: str
+) -> None:
+    """Clear the shared LoginState for these credentials, if there is one."""
+    state = hass.data.get(LOGIN_STATE, {}).get(
+        _login_state_key(username, channel, password)
+    )
+    if state is not None:
+        state.reset()
+
+
 class RainBirdAuth:
     """
     Manages Rain Bird JWT token lifecycle.
@@ -329,25 +522,29 @@ class RainBirdAuth:
         username: str,
         password: str,
         channel: str = DEFAULT_AUTH_CHANNEL,
+        state: LoginState | None = None,
+        read_cache: bool = True,
     ) -> None:
         self._username = username
         self._password = password
         self._channel = channel
         self._token: str | None = None
         self._token_exp: int = 0
-        self._cache_loaded = False
-        # Serializes token refreshes across the three coordinators, which
-        # poll from different executor threads. Without this, an expired
-        # token can trigger up to three simultaneous logins.
-        self._refresh_lock = threading.Lock()
-        # Set once Rain Bird refuses the stored credentials. From then on no
-        # login is attempted at all: retrying a rejected password every poll
-        # is what gets an account locked or the IP challenged by the WAF. The
-        # reauth flow reloads the entry, which builds a fresh instance.
-        self._rejected: RainBirdAuthRejected | None = None
-        # Backoff after a login that failed for any other reason.
-        self._login_failures = 0
-        self._next_login_at = 0.0
+        # read_cache=False is for checking a password (config flow): the disk
+        # cache is keyed by account and channel only, so any valid token in
+        # it, e.g. one another entry of the account just refreshed, would
+        # "accept" whatever password was typed without asking Rain Bird.
+        # Writing stays on: a token from a login that just worked is safe to
+        # share, and the entries reloaded after a reauth reuse it instead of
+        # each logging in again.
+        self._cache_loaded = not read_cache
+        # Rejection count, latch, backoff and refresh lock. async_setup_entry
+        # passes the shared one from login_state_for, so they survive setup
+        # retries. The config flow passes none on purpose: each submit is a
+        # password the user just typed, and it must be tried at once even if
+        # the stored one is latched or backing off. A successful reauth
+        # clears the shared state of the new credentials before reloading.
+        self._state = state if state is not None else LoginState()
         # Per-account, per-channel cache file in the HA config dir (survives
         # HACS updates, never mixes tokens between different Rain Bird
         # accounts, and keeps web/app tokens separate so switching channels
@@ -401,20 +598,39 @@ class RainBirdAuth:
             # at once with an expired token. Only the first thread through
             # the lock should actually log in; the rest just wait and reuse
             # the token it fetched.
-            with self._refresh_lock:
+            with self._state.refresh_lock:
                 if not self._is_token_valid():
                     self._login()
 
         return self._token
 
+    def _backoff(self, minimum: float = 0) -> float:
+        """Start the wait before the next login and return its length."""
+        state = self._state
+        delay = max(
+            minimum,
+            LOGIN_BACKOFF[min(state.login_failures, len(LOGIN_BACKOFF) - 1)],
+        )
+        state.login_failures += 1
+        state.next_login_at = time.monotonic() + delay
+        return delay
+
     def _login(self) -> None:
         """Log in once, unless the credentials were refused or a backoff runs.
 
-        Caller holds _refresh_lock.
+        A login-page response only counts as refused credentials after
+        REJECTIONS_TO_REAUTH consecutive ones, each at least
+        REJECTION_RETRY_DELAY after the previous. Before that it raises
+        RainBirdAuthSuspect, which callers treat as a transient failure.
+        Only a successful login resets the count: a WAF challenge or a
+        network error in between is not evidence either way.
+
+        Caller holds the state's refresh_lock.
         """
-        if self._rejected is not None:
-            raise self._rejected
-        wait = self._next_login_at - time.monotonic()
+        state = self._state
+        if state.rejected is not None:
+            raise state.rejected
+        wait = state.next_login_at - time.monotonic()
         if wait > 0:
             raise RainBirdLoginBackoff(
                 f"Login paused for {int(wait)}s after a failed attempt"
@@ -427,21 +643,36 @@ class RainBirdAuth:
             else:
                 token = fetch_token(self._username, self._password)
         except RainBirdAuthRejected as err:
-            self._rejected = err
+            state.rejections += 1
+            # Never add the exception message or the response body here:
+            # status, path and error_text are the parts built to be logged.
             _LOGGER.warning(
-                "Rain Bird rejected the stored credentials; no further logins "
-                "will be attempted until they are updated"
+                "Rain Bird returned the login page instead of a token "
+                "(%d/%d, HTTP %s, %s, page error: %s)",
+                state.rejections,
+                REJECTIONS_TO_REAUTH,
+                err.status,
+                err.path or "no path",
+                err.error_text or "no error text on the page",
             )
-            raise
+            if state.rejections >= REJECTIONS_TO_REAUTH:
+                state.rejected = err
+                _LOGGER.warning(
+                    "Rain Bird rejected the stored credentials; no further "
+                    "logins will be attempted until they are updated"
+                )
+                raise
+            delay = self._backoff(minimum=REJECTION_RETRY_DELAY)
+            raise RainBirdAuthSuspect(
+                f"Rain Bird returned the login page instead of a token; "
+                f"trying again in {delay}s before asking for the password"
+            ) from err
         except Exception:
-            delay = LOGIN_BACKOFF[min(self._login_failures, len(LOGIN_BACKOFF) - 1)]
-            self._login_failures += 1
-            self._next_login_at = time.monotonic() + delay
+            delay = self._backoff()
             _LOGGER.debug("Login failed; next attempt in %ss", delay)
             raise
 
-        self._login_failures = 0
-        self._next_login_at = 0.0
+        state.reset()
         self._token = token
         self._token_exp = _decode_jwt_exp(token)
         self._save_token_cache()

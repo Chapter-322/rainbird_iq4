@@ -21,7 +21,7 @@ from homeassistant.helpers.start import async_at_started
 from homeassistant.loader import async_get_integration
 
 from .api import RainBirdAPI
-from .auth import RainBirdAuth
+from .auth import RainBirdAuth, entry_credentials, login_state_for, reset_login_state
 from .subscription import RainBirdSubscription
 from .const import (
     CONF_AUTH_CHANNEL,
@@ -391,7 +391,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entry.data.get(CONF_AUTH_CHANNEL, DEFAULT_AUTH_CHANNEL),
     )
 
-    auth = RainBirdAuth(hass, username, password, channel=auth_channel)
+    # The login state comes from hass.data, not a fresh instance: a failed
+    # first refresh makes Home Assistant retry this whole function, and the
+    # backoff and rejection count must carry over or they never take effect.
+    auth = RainBirdAuth(
+        hass, username, password, channel=auth_channel,
+        state=login_state_for(hass, username, auth_channel, password),
+    )
     api  = RainBirdAPI(auth)
 
     coordinator         = RainBirdCoordinator(hass, api, satellite_id, company_id, scan_realtime)
@@ -478,3 +484,18 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             for service in SERVICES:
                 hass.services.async_remove(DOMAIN, service)
     return unload_ok
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Forget the login state, so adding the account again starts clean.
+
+    Kept while another entry still logs in with the same credentials: that
+    state, latch included, is still that entry's.
+    """
+    credentials = entry_credentials(entry)
+    if any(
+        other.entry_id != entry.entry_id and entry_credentials(other) == credentials
+        for other in hass.config_entries.async_entries(DOMAIN)
+    ):
+        return
+    reset_login_state(hass, *credentials)

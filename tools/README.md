@@ -1,5 +1,8 @@
 # Community debugging scripts
 
+> Developers: the integration's own test suite lives in `tests/`, not here.
+> See [Running the tests](#running-the-tests) at the end.
+
 These are standalone scripts used to diagnose specific issues reported by users. They are not part of the integration installed via HACS and are not required for normal use.
 
 Use at your own discretion. They are not reviewed or endorsed by Rain Bird.
@@ -62,3 +65,17 @@ python3 rainbird_isapp_test.py
 ```
 
 Then paste the full output into the forum thread or a GitHub issue.
+
+## Running the tests
+
+The pytest suite in `tests/` uses `pytest-homeassistant-custom-component`,
+which pins an exact Home Assistant version. It never contacts Rain Bird:
+every login and API call is replaced inside the tests.
+
+```bash
+python3 -m venv venv-test
+venv-test/bin/pip install -r requirements_test.txt
+venv-test/bin/pytest
+```
+
+Run it from the repository root (`pytest.ini` sets the paths).

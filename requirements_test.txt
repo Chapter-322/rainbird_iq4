@@ -1,0 +1,2 @@
+pytest-homeassistant-custom-component==0.13.375
+curl_cffi>=0.7.0

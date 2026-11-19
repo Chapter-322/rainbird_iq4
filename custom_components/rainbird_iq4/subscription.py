@@ -216,10 +216,14 @@ class RainBirdSubscription:
             except asyncio.CancelledError:
                 raise
             except RainBirdAuthRejected:
-                # Reconnecting would mean logging in again with refused
-                # credentials. The coordinators hit the same remembered
-                # rejection on their next poll and ask for reauthentication,
-                # which reloads the entry and starts a new subscription.
+                # Only raised once the rejection has latched (a first
+                # login-page response is RainBirdAuthSuspect and takes the
+                # ordinary reconnect path below, whose next login attempt
+                # meets the login backoff). Reconnecting would mean logging
+                # in again with refused credentials. The coordinators hit the
+                # same latched rejection on their next poll and ask for
+                # reauthentication, which reloads the entry and starts a new
+                # subscription.
                 _LOGGER.debug("Live connection stopped: credentials rejected")
                 self._async_set_healthy(False)
                 return

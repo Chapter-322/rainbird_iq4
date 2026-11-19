@@ -8,7 +8,8 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.core import HomeAssistant
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers.selector import (
     SelectSelector,
@@ -17,7 +18,14 @@ from homeassistant.helpers.selector import (
 )
 
 from .api import RainBirdAPI
-from .auth import RainBirdAuth, RainBirdAuthRejected, RainBirdWafChallenge
+from .auth import (
+    RainBirdAuth,
+    RainBirdAuthRejected,
+    RainBirdAuthSuspect,
+    RainBirdWafChallenge,
+    entry_credentials,
+    reset_login_state,
+)
 from .const import (
     AUTH_CHANNEL_APP,
     AUTH_CHANNEL_WEB,
@@ -61,8 +69,16 @@ _LOGGER = logging.getLogger(__name__)
 async def _get_satellites(
     hass: HomeAssistant, username: str, password: str, channel: str
 ) -> list[dict]:
-    """Validate credentials and return list of satellites."""
-    auth = RainBirdAuth(hass, username, password, channel=channel)
+    """Validate credentials and return list of satellites.
+
+    Always a real login to Rain Bird. No shared login state: the user just
+    typed this password, so it is tried now even if the entry's stored one
+    is latched or backing off. No token cache: a cached token would pass
+    without the password ever being checked, and both the reauth (which
+    copies the password to the account's other entries) and the reset of
+    the login state rely on this check being real.
+    """
+    auth = RainBirdAuth(hass, username, password, channel=channel, read_cache=False)
     api = RainBirdAPI(auth)
 
     try:
@@ -86,7 +102,13 @@ def _login_error(err: Exception) -> str:
     if isinstance(err, RainBirdWafChallenge):
         _LOGGER.error("AWS WAF challenge during login: %s", err)
         return "waf_challenge"
-    if isinstance(err, RainBirdAuthRejected):
+    # A single login-page response is only "suspect" for a stored password,
+    # but here the user is looking at the form: report it straight away.
+    # Logs the underlying rejection: the suspect's own message talks about
+    # trying again, which nothing does here.
+    if isinstance(err, RainBirdAuthSuspect) and err.__cause__ is not None:
+        err = err.__cause__
+    if isinstance(err, (RainBirdAuthRejected, RainBirdAuthSuspect)):
         _LOGGER.error("Login rejected: %s", err)
         return "invalid_auth"
     if isinstance(err, RuntimeError):
@@ -179,9 +201,8 @@ class RainBirdConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 ):
                     errors["base"] = "wrong_account"
                 else:
-                    return self.async_update_reload_and_abort(
-                        entry, data_updates={CONF_PASSWORD: password}
-                    )
+                    self._async_apply_password(entry, password)
+                    return self.async_abort(reason="reauth_successful")
 
         return self.async_show_form(
             step_id="reauth_confirm",
@@ -189,6 +210,46 @@ class RainBirdConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             description_placeholders={"username": username},
             errors=errors,
         )
+
+    @callback
+    def _async_apply_password(self, entry: ConfigEntry, password: str) -> None:
+        """Store a password _get_satellites just verified, on every entry of
+        the account, and reload them.
+
+        The password belongs to the Rain Bird account, not to one controller.
+        With one entry per controller, updating only this entry left the
+        others on the old password, each asking for its own reauth: the user
+        re-entered the same password once per controller. Safe only because
+        _get_satellites really logs in (no token cache); never call this
+        with a password that was not checked.
+        """
+        username = entry.data[CONF_USERNAME].strip().lower()
+        for target in self.hass.config_entries.async_entries(DOMAIN):
+            if target.data.get(CONF_USERNAME, "").strip().lower() != username:
+                continue
+            target_username, channel, _ = entry_credentials(target)
+            # The login just worked, so whatever the shared state for these
+            # credentials remembers (a latch, a backoff) is stale. Without
+            # this, re-entering the same password would reload into the
+            # latch and ask again at once.
+            reset_login_state(self.hass, target_username, channel, password)
+            if target.entry_id != entry.entry_id:
+                # This flow is the one being finished; the others would stay
+                # on screen asking for a password that is already stored.
+                for flow in target.async_get_active_flows(
+                    self.hass, {config_entries.SOURCE_REAUTH}
+                ):
+                    self.hass.config_entries.flow.async_abort(flow["flow_id"])
+            changed = self.hass.config_entries.async_update_entry(
+                target, data={**target.data, CONF_PASSWORD: password}
+            )
+            # A loaded entry has an update listener (async_update_options),
+            # which reloads it on any change. Scheduling a reload as well
+            # would load it twice. For the same reason HA warns when
+            # async_update_reload_and_abort is used on such entries, and
+            # announces it will stop working in 2026.12.
+            if not (changed and target.update_listeners):
+                self.hass.config_entries.async_schedule_reload(target.entry_id)
 
     async def async_step_select_controller(
         self, user_input: dict[str, Any] | None = None
@@ -218,6 +279,12 @@ class RainBirdConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Create a config entry for the given satellite."""
         await self.async_set_unique_id(str(satellite["id"]))
         self._abort_if_unique_id_configured()
+
+        # _get_satellites just logged in with these credentials, so a latch
+        # or backoff remembered for them (from another entry of the account)
+        # is stale. Left in place, the new entry would set up into it and go
+        # straight to reauth without trying its own login.
+        reset_login_state(self.hass, self._username, self._channel, self._password)
 
         return self.async_create_entry(
             title=satellite.get("name", "Rain Bird IQ4"),
